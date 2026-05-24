@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Xiaomi Feature Lookup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+</head>
+<body>
+  <div id="app">
+    <section data-screen="login" class="screen screen-visible login-screen">
+      <main class="login-card">
+        <div class="brand-mark">mi</div>
+        <h1>Tra cứu Tính năng</h1>
+        <p class="muted">Dán mã nhân viên của bạn</p>
+
+        <form id="loginForm" class="login-form">
+          <label for="employeeInput">Mã nhân viên</label>
+          <input id="employeeInput" autocomplete="username" placeholder="VD: NV00123" />
+          <p id="loginError" class="form-error hidden"></p>
+          <button id="loginButton" type="submit" class="primary-button">Vào hệ thống</button>
+        </form>
+
+        <div id="demoNotice" class="demo-notice">
+          <p><strong>Chế độ Demo</strong> — chọn tài khoản:</p>
+          <div class="demo-actions">
+            <button type="button" onclick="quickLogin('DEMO001')">Nhân viên<br><strong>DEMO001</strong></button>
+            <button type="button" onclick="quickLogin('TUADMIN')">Admin Tú<br><strong>TUADMIN</strong></button>
+          </div>
+        </div>
+      </main>
+    </section>
+
+    <section data-screen="home" class="screen hidden min-screen">
+      <header class="app-header">
+        <div class="header-inner">
+          <button id="homeButton" type="button" class="brand-button" aria-label="Trang chủ">
+            <span class="brand-mark small">mi</span>
+            <span>
+              <strong>Xiaomi Lookup</strong>
+              <small id="homeGreeting">Xin chào</small>
+            </span>
+          </button>
+          <div class="header-actions">
+            <button id="adminEntryButton" type="button" class="icon-button hidden" title="Admin">⚙</button>
+            <button id="logoutButton" type="button" class="ghost-button">Đăng xuất</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        <section class="search-panel">
+          <div class="search-box">
+            <span>⌕</span>
+            <input id="searchInput" placeholder="Tìm camera, vân tay, chia sẻ..." />
+            <button id="clearSearchButton" type="button" class="clear-button hidden">×</button>
+          </div>
+          <div id="productFilters" class="chip-row"></div>
+          <div id="categoryFilters" class="chip-row"></div>
+        </section>
+
+        <section class="section-heading">
+          <div>
+            <p>Kết quả</p>
+            <h2 id="resultCount">0 tính năng</h2>
+          </div>
+        </section>
+
+        <section id="featureList" class="bento-grid"></section>
+        <section id="emptyState" class="empty-state hidden">
+          <div>⌕</div>
+          <h2>Không tìm thấy tính năng phù hợp</h2>
+          <p>Thử từ khóa khác hoặc đổi bộ lọc.</p>
+        </section>
+      </main>
+    </section>
+
+    <section data-screen="detail" class="screen hidden min-screen">
+      <header class="app-header">
+        <div class="header-inner">
+          <button id="backToHomeButton" type="button" class="ghost-button">← Quay lại</button>
+          <button id="detailReportTopButton" type="button" class="ghost-button">⚑ Báo lỗi</button>
+        </div>
+      </header>
+      <main id="detailContent" class="page-shell detail-shell"></main>
+    </section>
+
+    <section data-screen="admin" class="screen hidden min-screen">
+      <header class="app-header">
+        <div class="header-inner">
+          <button id="adminBackButton" type="button" class="ghost-button">← Về tra cứu</button>
+          <strong>Dashboard Tú</strong>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        <section class="stats-grid">
+          <div class="stat-card"><span id="adminPendingCount">0</span><small>Chờ duyệt</small></div>
+          <div class="stat-card"><span id="adminHighCount">0</span><small>Ưu tiên cao</small></div>
+          <div class="stat-card"><span id="adminSearchCount">0</span><small>Lượt demo</small></div>
+        </section>
+
+        <nav class="tab-row">
+          <button type="button" class="tab-button active" data-admin-tab="reports">Báo cáo lỗi</button>
+          <button type="button" class="tab-button" data-admin-tab="analytics">Analytics</button>
+        </nav>
+
+        <section id="adminReportsPanel"></section>
+        <section id="adminAnalyticsPanel" class="hidden"></section>
+      </main>
+    </section>
+  </div>
+
+  <div id="reportModal" class="modal hidden"></div>
+  <div id="adminPinModal" class="modal hidden"></div>
+  <div id="videoModal" class="modal hidden">
+    <div class="video-dialog">
+      <div class="dialog-header">
+        <strong>Video hướng dẫn</strong>
+        <button id="closeVideoButton" type="button">×</button>
+      </div>
+      <div id="videoFrame" class="video-frame"></div>
+    </div>
+  </div>
+  <div id="toastHost" class="toast-host"></div>
+
+  <script>
+    const CONFIG = {
+      SUPABASE_URL: "",
+      SUPABASE_ANON_KEY: "",
+      EDGE_FUNCTION_BASE_URL: "",
+      ADMIN_PIN: "1909",
+      SESSION_DURATION_MS: 8 * 60 * 60 * 1000,
+      SEARCH_DEBOUNCE_MS: 300,
+      STORAGE_KEY: "xiaomi_lookup_session_v44"
+    };
+
+    const PRODUCT_CATEGORIES = ["Tất cả", "Phone", "Watch", "IoT", "Tablet"];
+    const REPORT_LABELS = {
+      wrong_steps: "Sai bước thực hiện",
+      not_working: "Không hoạt động",
+      outdated: "Thông tin đã cũ"
+    };
+
+    const DEMO = {
+      users: [
+        { employee_id: "DEMO001", full_name: "Nguyễn Văn A", department: "Bán hàng", is_active: true },
+        { employee_id: "TUADMIN", full_name: "Tú Admin", department: "Đào tạo", is_active: true }
+      ],
+      features: [
+        {
+          feature_id: "F001",
+          feature_name: "Chụp ảnh ban đêm",
+          feature_name_en: "Night Mode",
+          category: "Camera",
+          product_category: "Phone",
+          description: "Chụp ảnh sắc nét trong điều kiện thiếu sáng nhờ AI xử lý đa khung hình.",
+          steps: "1. Mở ứng dụng Camera\n2. Chuyển sang chế độ Đêm\n3. Giữ máy ổn định\n4. Bấm chụp và chờ máy xử lý",
+          compatible_models: "Xiaomi 14, Redmi Note 13 Pro, POCO X6",
+          notes: "Hiệu quả tốt nhất khi chủ thể đứng yên và môi trường không quá tối.",
+          related_features: "F004",
+          keywords: "chụp đêm, night mode, thiếu sáng, tối, ảnh đẹp, camera",
+          status: "Hoạt động",
+          video_url: "https://youtu.be/dQw4w9WgXcQ",
+          image_urls: "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=1200&q=80;https://images.unsplash.com/photo-1601972599720-36938d4ecd31?w=1200&q=80;https://images.unsplash.com/photo-1565849904461-04a58ad377e0?w=1200&q=80"
+        },
+        {
+          feature_id: "F002",
+          feature_name: "Xiaomi Share",
+          feature_name_en: "Xiaomi Share",
+          category: "Kết nối",
+          product_category: "Phone",
+          description: "Chia sẻ file nhanh giữa các thiết bị Xiaomi mà không cần internet.",
+          steps: "1. Vuốt xuống mở Quick Settings\n2. Bật Xiaomi Share\n3. Chọn file cần gửi\n4. Chọn thiết bị nhận",
+          compatible_models: "Xiaomi, Redmi, POCO hỗ trợ HyperOS/MIUI mới",
+          notes: "Cả hai thiết bị nên bật Wi-Fi và Bluetooth.",
+          related_features: "",
+          keywords: "chia sẻ file, share, truyền file, không cần wifi, airdrop",
+          status: "Hoạt động",
+          video_url: "https://youtu.be/dQw4w9WgXcQ",
+          image_urls: "https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=1200&q=80;https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&q=80"
+        },
+        {
+          feature_id: "F003",
+          feature_name: "Theo dõi giấc ngủ",
+          feature_name_en: "Sleep Tracking",
+          category: "Sức khỏe",
+          product_category: "Watch",
+          description: "Phân tích chất lượng giấc ngủ qua đồng hồ thông minh Xiaomi.",
+          steps: "1. Đeo đồng hồ khi ngủ\n2. Mở app Mi Fitness\n3. Chọn tab Sức khỏe\n4. Xem mục Giấc ngủ",
+          compatible_models: "Xiaomi Watch S3, Redmi Watch 4, Xiaomi Smart Band 8",
+          notes: "Nên sạc pin trên 30% trước khi ngủ.",
+          related_features: "",
+          keywords: "giấc ngủ, ngủ, sleep, sức khỏe, đồng hồ, watch",
+          status: "Hoạt động",
+          video_url: "",
+          image_urls: "https://images.unsplash.com/photo-1434494878577-86c23bcb06b9?w=1200&q=80;https://images.unsplash.com/photo-1575311373937-040b8e1fd5b6?w=1200&q=80"
+        },
+        {
+          feature_id: "F004",
+          feature_name: "Mở khóa vân tay",
+          feature_name_en: "Fingerprint Unlock",
+          category: "Bảo mật",
+          product_category: "Phone",
+          description: "Mở khóa màn hình nhanh bằng vân tay dưới màn hình hoặc cạnh máy.",
+          steps: "1. Vào Cài đặt → Mật khẩu & Bảo mật\n2. Chọn Vân tay\n3. Đặt mật khẩu dự phòng\n4. Đăng ký vân tay",
+          compatible_models: "Xiaomi 14, Redmi Note 13, POCO X6",
+          notes: "Đăng ký thêm vân tay dự phòng để mở khóa ổn định hơn.",
+          related_features: "F001",
+          keywords: "vân tay, mở khóa, bảo mật, fingerprint, nhanh",
+          status: "Hoạt động",
+          video_url: "https://youtu.be/dQw4w9WgXcQ",
+          image_urls: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=1200&q=80;https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1200&q=80"
+        }
+      ],
+      reports: [],
+      searchLogs: []
+    };
+
+    const state = {
+      screen: "login",
+      user: null,
+      features: [],
+      filtered: [],
+      reports: [],
+      analytics: { topSearches: [], noResults: [] },
+      selectedFeatureId: null,
+      search: "",
+      productCategory: "Tất cả",
+      category: "Tất cả",
+      adminTab: "reports",
+      adminPin: "",
+      demoMode: true,
+      client: null,
+      memorySession: null,
+      memoryStore: new Map(),
+      searchTimer: null,
+      realtimeChannel: null
+    };
+
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+
+    window.addEventListener("error", (event) => {
+      const login = $('[data-screen="login"]');
+      if (login) login.classList.remove("hidden");
+      setLoginError(`Lỗi khởi động: ${event.message || "không rõ"}`);
+    });
+
+    function hasSupabaseConfig() {
+      return Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);
+    }
+
+    function initClient() {
+      state.demoMode = !hasSupabaseConfig() || !window.supabase;
+      if (!state.demoMode) {
+        state.client = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+      }
+    }
+
+    function edgeBaseUrl() {
+      if (CONFIG.EDGE_FUNCTION_BASE_URL) return CONFIG.EDGE_FUNCTION_BASE_URL.replace(/\/$/, "");
+      if (!CONFIG.SUPABASE_URL) return "";
+      return `${CONFIG.SUPABASE_URL.replace(/\/$/, "")}/functions/v1`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function normalizeText(value) {
+      return String(value ?? "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+    }
+
+    function normalizeCategory(value) {
+      const s = String(value ?? "").trim().replace(/\s+/g, " ");
+      if (!s) return "";
+      return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    }
+
+    function normalizePin(value) {
+      return String(value ?? "").replace(/[^\d]/g, "");
+    }
+
+    function splitSemi(value) {
+      return String(value ?? "").split(";").map((item) => item.trim()).filter(Boolean);
+    }
+
+    function safeGetItem(key) {
+      try {
+        return localStorage.getItem(key) ?? state.memoryStore.get(key) ?? null;
+      } catch {
+        return state.memoryStore.get(key) ?? null;
+      }
+    }
+
+    function safeSetItem(key, value) {
+      state.memoryStore.set(key, String(value));
+      try { localStorage.setItem(key, String(value)); } catch {}
+    }
+
+    function safeRemoveItem(key) {
+      state.memoryStore.delete(key);
+      try { localStorage.removeItem(key); } catch {}
+    }
+
+    function getSession() {
+      try {
+        const raw = localStorage.getItem(CONFIG.STORAGE_KEY);
+        const session = raw ? JSON.parse(raw) : state.memorySession;
+        if (!session) return null;
+        if (Date.now() - session.loginAt > CONFIG.SESSION_DURATION_MS) {
+          safeRemoveItem(CONFIG.STORAGE_KEY);
+          state.memorySession = null;
+          return null;
+        }
+        return session;
+      } catch {
+        return state.memorySession;
+      }
+    }
+
+    function saveSession(user) {
+      const session = { ...user, loginAt: Date.now() };
+      state.user = session;
+      state.memorySession = session;
+      safeSetItem(CONFIG.STORAGE_KEY, JSON.stringify(session));
+    }
+
+    function clearSession() {
+      state.user = null;
+      state.memorySession = null;
+      safeRemoveItem(CONFIG.STORAGE_KEY);
+    }
+
+    function setLoginError(message = "") {
+      const target = $("#loginError");
+      if (!target) return;
+      target.textContent = message;
+      target.classList.toggle("hidden", !message);
+    }
+
+    function showToast(message, type = "success") {
+      const toast = document.createElement("div");
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      $("#toastHost").appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    async function callEdgeFunction(name, payload) {
+      const base = edgeBaseUrl();
+      if (!base) throw new Error("Chưa cấu hình Edge Function.");
+      const response = await fetch(`${base}/${name}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${CONFIG.SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Edge Function lỗi.");
+      return data;
+    }
+
+    async function login(employeeId) {
+      const id = String(employeeId || "").trim().toUpperCase();
+      if (id.length < 3) throw new Error("Mã nhân viên không hợp lệ.");
+
+      if (state.demoMode) {
+        const user = DEMO.users.find((item) => item.employee_id === id);
+        if (!user) throw new Error("Demo chỉ có DEMO001 hoặc TUADMIN.");
+        if (!user.is_active) throw new Error("Tài khoản đã bị khóa.");
+        return user;
+      }
+
+      const response = await callEdgeFunction("verify-employee", { employee_id: id });
+      return response.user;
+    }
+
+    async function quickLogin(id) {
+      const input = $("#employeeInput");
+      if (input) input.value = id;
+      try {
+        setLoginError("");
+        const user = await login(id);
+        saveSession(user);
+        await loadFeatures();
+        subscribeRealtime();
+        $("#adminEntryButton").classList.remove("hidden");
+        showScreen("home");
+      } catch (error) {
+        setLoginError(error.message);
+      }
+    }
+
+    function showScreen(name) {
+      state.screen = name;
+      const incoming = document.querySelector(`[data-screen="${name}"]`);
+      const outgoing = document.querySelector("[data-screen].screen-visible");
+
+      if (name === "home") renderHome();
+      if (name === "detail") renderDetail();
+      if (name === "admin") renderAdmin();
+
+      if (outgoing && outgoing !== incoming) {
+        outgoing.style.opacity = "0";
+        outgoing.style.transform = "translateY(-8px)";
+        outgoing.style.pointerEvents = "none";
+        setTimeout(() => {
+          outgoing.classList.add("hidden");
+          outgoing.classList.remove("screen-visible");
+          outgoing.style.opacity = "";
+          outgoing.style.transform = "";
+          outgoing.style.pointerEvents = "";
+          if (incoming) {
+            incoming.classList.remove("hidden");
+            incoming.style.pointerEvents = "";
+            requestAnimationFrame(() => requestAnimationFrame(() => incoming.classList.add("screen-visible")));
+          }
+          window.scrollTo({ top: 0, behavior: "auto" });
+        }, 160);
+      } else {
+        document.querySelectorAll("[data-screen]").forEach((el) => {
+          if (el.dataset.screen !== name) {
+            el.classList.add("hidden");
+            el.classList.remove("screen-visible");
+            el.style.pointerEvents = "";
+          }
+        });
+        if (incoming) {
+          incoming.classList.remove("hidden");
+          incoming.style.pointerEvents = "";
+          requestAnimationFrame(() => requestAnimationFrame(() => incoming.classList.add("screen-visible")));
+        }
+        window.scrollTo({ top: 0, behavior: "auto" });
+      }
+    }
+
+    async function loadFeatures() {
+      if (state.demoMode) {
+        state.features = DEMO.features.filter((feature) => feature.status === "Hoạt động");
+      } else {
+        const { data, error } = await state.client
+          .from("features")
+          .select("*")
+          .eq("status", "Hoạt động")
+          .order("feature_name");
+        if (error) throw error;
+        state.features = data || [];
+      }
+      applyFilters();
+    }
+
+    function subscribeRealtime() {
+      if (state.demoMode || state.realtimeChannel || !state.client) return;
+      state.realtimeChannel = state.client
+        .channel("features-changes")
+        .on("postgres_changes", { event: "*", schema: "public", table: "features" }, loadFeatures)
+        .subscribe();
+    }
+
+    function applyFilters() {
+      const q = normalizeText(state.search);
+      const activeCat = normalizeCategory(state.category);
+
+      state.filtered = state.features.filter((feature) => {
+        if (
+          state.productCategory !== "Tất cả" &&
+          feature.product_category !== state.productCategory &&
+          feature.product_category !== "Tất cả"
+        ) return false;
+
+        if (
+          activeCat &&
+          activeCat !== "Tất cả" &&
+          normalizeCategory(feature.category) !== activeCat
+        ) return false;
+
+        if (!q) return true;
+        return [
+          feature.feature_name,
+          feature.feature_name_en,
+          feature.keywords,
+          feature.description,
+          feature.compatible_models
+        ].some((field) => normalizeText(field).includes(q));
+      });
+
+      if (q) state.filtered.sort((a, b) => scoreFeature(a, q) - scoreFeature(b, q));
+    }
+
+    function scoreFeature(feature, q) {
+      if (normalizeText(feature.feature_name).includes(q)) return 0;
+      if (normalizeText(feature.keywords).includes(q)) return 1;
+      if (normalizeText(feature.description).includes(q)) return 2;
+      return 3;
+    }
+
+    function renderHome() {
+      $("#homeGreeting").textContent = `${state.user?.full_name || "Nhân viên"} · ${state.user?.employee_id || ""}`;
+      $("#searchInput").value = state.search;
+      $("#clearSearchButton").classList.toggle("hidden", !state.search);
+      $("#resultCount").textContent = `${state.filtered.length} tính năng`;
+      renderFilters();
+      renderFeatureList();
+    }
+
+    function renderFilters() {
+      $("#productFilters").innerHTML = PRODUCT_CATEGORIES.map((item) => renderChip("product", item, state.productCategory === item)).join("");
+      const cats = ["Tất cả", ...new Set(state.features.map((feature) => normalizeCategory(feature.category)).filter(Boolean))];
+      $("#categoryFilters").innerHTML = cats.map((item) => renderChip("category", item, normalizeCategory(state.category) === item)).join("");
+    }
+
+    function renderChip(kind, label, active) {
+      return `<button type="button" class="chip ${active ? "active" : ""}" data-filter-kind="${kind}" data-filter-value="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+    }
+
+    function renderFeatureList() {
+      const list = $("#featureList");
+      $("#emptyState").classList.toggle("hidden", state.filtered.length > 0);
+      if (!state.filtered.length) {
+        list.innerHTML = "";
+        return;
+      }
+
+      list.innerHTML = state.filtered.map((feature, index) => {
+        const firstImage = splitSemi(feature.image_urls)[0] || "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=1200&q=80";
+        const large = index % 3 === 2 ? " bento-wide" : "";
+        return `
+          <article class="feature-card${large}" data-feature-id="${escapeHtml(feature.feature_id)}">
+            <img src="${escapeHtml(firstImage)}" alt="${escapeHtml(feature.feature_name)}" loading="lazy" onerror="this.classList.add('hidden')" />
+            <div class="feature-body">
+              <div class="card-badges">
+                <span>${escapeHtml(feature.category || "Khác")}</span>
+                <small>${escapeHtml(feature.product_category || "Phone")}</small>
+              </div>
+              <h3>${escapeHtml(feature.feature_name)}</h3>
+              <p>${escapeHtml(feature.description)}</p>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function selectedFeature() {
+      return state.features.find((feature) => feature.feature_id === state.selectedFeatureId);
+    }
+
+    function renderDetail() {
+      const feature = selectedFeature();
+      if (!feature) return showScreen("home");
+      const images = splitSemi(feature.image_urls).slice(0, 3);
+      const videoId = extractYouTubeId(feature.video_url);
+      const related = splitSemi(feature.related_features)
+        .map((id) => state.features.find((item) => item.feature_id === id)?.feature_name)
+        .filter(Boolean);
+
+      $("#detailContent").innerHTML = `
+        <article class="detail-card">
+          ${images.length ? `
+            <section class="media-strip">
+              ${images.map((url, index) => `
+                <img src="${escapeHtml(url)}" alt="Ảnh hướng dẫn ${index + 1}" loading="lazy" onerror="this.classList.add('hidden')" />
+              `).join("")}
+            </section>
+          ` : ""}
+          <div class="detail-title">
+            <div class="card-badges">
+              <span>${escapeHtml(feature.category || "Khác")}</span>
+              <small>${escapeHtml(feature.product_category || "Phone")}</small>
+            </div>
+            <h1>${escapeHtml(feature.feature_name)}</h1>
+            <p>${escapeHtml(feature.description)}</p>
+          </div>
+          ${videoId ? `
+            <button type="button" class="video-button" data-youtube-id="${escapeHtml(videoId)}">
+              <img src="https://img.youtube.com/vi/${escapeHtml(videoId)}/mqdefault.jpg" alt="Video thumbnail" />
+              <span>▶ Xem video hướng dẫn</span>
+            </button>
+          ` : ""}
+          <section class="content-block">
+            <h2>Các bước thực hiện</h2>
+            ${renderSteps(feature.steps)}
+          </section>
+          <section class="content-block">
+            <h2>Thiết bị tương thích</h2>
+            <p>${escapeHtml(feature.compatible_models || "Đang cập nhật")}</p>
+          </section>
+          ${feature.notes ? `<section class="content-block"><h2>Lưu ý</h2><p>${escapeHtml(feature.notes)}</p></section>` : ""}
+          ${related.length ? `<section class="content-block"><h2>Tính năng liên quan</h2><div class="related-list">${related.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div></section>` : ""}
+        </article>
+      `;
+    }
+
+    function renderSteps(stepsText) {
+      const lines = String(stepsText || "").split("\n").map((line) => line.trim()).filter(Boolean);
+      if (!lines.length) return `<p class="muted">Chưa có hướng dẫn.</p>`;
+      return `<ol class="step-list">${lines.map((line, index) => `
+        <li><span>${index + 1}</span><p>${escapeHtml(line.replace(/^\d+\.\s*/, ""))}</p></li>
+      `).join("")}</ol>`;
+    }
+
+    function extractYouTubeId(url) {
+      const match = String(url || "").match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([^&\n?#]+)/);
+      return match ? match[1] : "";
+    }
+
+    async function logSearch(featureId = null) {
+      const keyword = state.search.trim();
+      if (!state.user || keyword.length < 2) return;
+      if (state.demoMode) {
+        DEMO.searchLogs.push({ employee_id: state.user.employee_id, keyword, feature_id: featureId, searched_at: new Date().toISOString() });
+        return;
+      }
+      await state.client.from("search_logs").insert({ employee_id: state.user.employee_id, keyword, feature_id: featureId });
+    }
+
+    function openReportModal() {
+      const feature = selectedFeature();
+      if (!feature) return;
+      $("#reportModal").innerHTML = `
+        <form id="reportForm" class="dialog">
+          <h2>Báo lỗi tính năng</h2>
+          <p class="muted">${escapeHtml(feature.feature_name)}</p>
+          <div class="report-options">
+            ${Object.entries(REPORT_LABELS).map(([value, label]) => `
+              <label><input type="radio" name="report_type" value="${value}" /> ${escapeHtml(label)}</label>
+            `).join("")}
+          </div>
+          <textarea id="reportDescription" placeholder="Mô tả vấn đề nếu có..."></textarea>
+          <div class="dialog-actions">
+            <button type="button" class="ghost-button" onclick="closeReportModal()">Hủy</button>
+            <button type="submit" class="primary-button">Gửi báo lỗi</button>
+          </div>
+        </form>
+      `;
+      $("#reportModal").classList.remove("hidden");
+    }
+
+    function closeReportModal() {
+      $("#reportModal").classList.add("hidden");
+      $("#reportModal").innerHTML = "";
+    }
+
+    function askAdminPin() {
+      return new Promise((resolve) => {
+        $("#adminPinModal").innerHTML = `
+          <form id="adminPinForm" class="dialog">
+            <h2>Nhập mã admin</h2>
+            <p class="muted">Mã PIN sẽ được ẩn khi nhập.</p>
+            <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••" />
+            <div class="dialog-actions">
+              <button type="button" class="ghost-button" id="cancelAdminPinButton">Hủy</button>
+              <button type="submit" class="primary-button">Vào admin</button>
+            </div>
+          </form>
+        `;
+        $("#adminPinModal").classList.remove("hidden");
+        $("#adminPinInput").focus();
+
+        const close = (value) => {
+          $("#adminPinModal").classList.add("hidden");
+          $("#adminPinModal").innerHTML = "";
+          resolve(value);
+        };
+
+        $("#cancelAdminPinButton").addEventListener("click", () => close(""));
+        $("#adminPinModal").addEventListener("click", (event) => {
+          if (event.target === $("#adminPinModal")) close("");
+        }, { once: true });
+        $("#adminPinForm").addEventListener("submit", (event) => {
+          event.preventDefault();
+          close($("#adminPinInput").value.trim());
+        });
+      });
+    }
+
+    async function submitReport(form) {
+      const feature = selectedFeature();
+      const reportType = new FormData(form).get("report_type");
+      if (!reportType) return showToast("Vui lòng chọn loại lỗi.", "warning");
+
+      const key = `report_${feature.feature_id}_${state.user.employee_id}`;
+      const lastReport = Number(safeGetItem(key) || "0");
+      if (lastReport && Date.now() - lastReport < 86400000) {
+        closeReportModal();
+        return showToast("Đã gửi báo lỗi tính năng này trong 24 giờ qua.", "warning");
+      }
+
+      const payload = {
+        feature_id: feature.feature_id,
+        employee_id: state.user.employee_id,
+        report_type: reportType,
+        description: $("#reportDescription").value.trim() || null
+      };
+
+      if (state.demoMode) {
+        DEMO.reports.unshift({
+          id: crypto.randomUUID ? crypto.randomUUID() : `R-${Date.now()}`,
+          ...payload,
+          suggested_fix: feature.steps,
+          priority: DEMO.reports.filter((item) => item.feature_id === feature.feature_id).length >= 2 ? "high" : "normal",
+          status: "pending",
+          created_at: new Date().toISOString()
+        });
+      } else {
+        const { error } = await state.client.from("feature_reports").insert({ ...payload, status: "pending", priority: "normal" });
+        if (error) throw error;
+      }
+
+      safeSetItem(key, String(Date.now()));
+      closeReportModal();
+      showToast("Đã nhận báo lỗi.", "success");
+    }
+
+    async function requireAdmin() {
+      const pin = normalizePin(await askAdminPin());
+      if (!pin) {
+        showToast("Mã admin không đúng.", "error");
+        return false;
+      }
+      if (state.demoMode && pin !== normalizePin(CONFIG.ADMIN_PIN)) {
+        showToast("Mã admin không đúng.", "error");
+        return false;
+      }
+      state.adminPin = pin;
+      return true;
+    }
+
+    async function loadAdminData() {
+      if (state.demoMode) {
+        state.reports = DEMO.reports.filter((report) => report.status === "pending");
+        state.analytics = buildDemoAnalytics();
+        return true;
+      }
+      const response = await callEdgeFunction("admin-action", { action: "load", admin_pin: state.adminPin });
+      state.reports = response.reports || [];
+      state.analytics = response.analytics || { topSearches: [], noResults: [] };
+      return true;
+    }
+
+    function buildDemoAnalytics() {
+      const topMap = new Map();
+      const missMap = new Map();
+      for (const log of DEMO.searchLogs) {
+        if (log.feature_id) topMap.set(log.feature_id, (topMap.get(log.feature_id) || 0) + 1);
+        else missMap.set(log.keyword, (missMap.get(log.keyword) || 0) + 1);
+      }
+      return {
+        topSearches: [...topMap.entries()].map(([feature_id, count]) => ({ feature_id, count })),
+        noResults: [...missMap.entries()].map(([keyword, count]) => ({ keyword, count }))
+      };
+    }
+
+    function renderAdmin() {
+      $("#adminPendingCount").textContent = state.reports.length;
+      $("#adminHighCount").textContent = state.reports.filter((report) => report.priority === "high").length;
+      $("#adminSearchCount").textContent = DEMO.searchLogs.length;
+      $$(".tab-button").forEach((button) => button.classList.toggle("active", button.dataset.adminTab === state.adminTab));
+      $("#adminReportsPanel").classList.toggle("hidden", state.adminTab !== "reports");
+      $("#adminAnalyticsPanel").classList.toggle("hidden", state.adminTab !== "analytics");
+      renderAdminReports();
+      renderAdminAnalytics();
+    }
+
+    function renderAdminReports() {
+      if (!state.reports.length) {
+        $("#adminReportsPanel").innerHTML = `<div class="empty-state compact"><h2>Không có báo cáo chờ duyệt</h2><p>Khi nhân viên báo lỗi, báo cáo sẽ xuất hiện ở đây.</p></div>`;
+        return;
+      }
+      $("#adminReportsPanel").innerHTML = state.reports.map((report) => {
+        const feature = state.features.find((item) => item.feature_id === report.feature_id) || {};
+        const suggested = report.suggested_fix || feature.steps || "";
+        return `
+          <article class="admin-report">
+            <header>
+              <div><strong>${escapeHtml(feature.feature_name || "Tính năng")}</strong><p>${escapeHtml(REPORT_LABELS[report.report_type] || report.report_type)}</p></div>
+              <span>${escapeHtml(report.priority || "normal")}</span>
+            </header>
+            <div class="report-grid">
+              <pre>${escapeHtml(feature.steps || feature.description || "")}</pre>
+              <div>
+                <select data-report-field="${escapeHtml(report.id)}">
+                  <option value="steps">→ steps</option>
+                  <option value="description">→ description</option>
+                  <option value="notes">→ notes</option>
+                </select>
+                <textarea data-report-edit="${escapeHtml(report.id)}">${escapeHtml(suggested)}</textarea>
+              </div>
+            </div>
+            <footer>
+              <button type="button" class="ghost-button" data-ignore-report="${escapeHtml(report.id)}">Reject</button>
+              <button type="button" class="primary-button" data-approve-report="${escapeHtml(report.id)}">Approve</button>
+            </footer>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderAdminAnalytics() {
+      $("#adminAnalyticsPanel").innerHTML = `
+        <div class="analytics-grid">
+          ${renderAnalyticsBlock("Top tính năng", state.analytics.topSearches, (item) => `${item.feature_id}: ${item.count} lượt`)}
+          ${renderAnalyticsBlock("Không ra kết quả", state.analytics.noResults, (item) => `${item.keyword}: ${item.count} lượt`)}
+        </div>
+      `;
+    }
+
+    function renderAnalyticsBlock(title, items, formatter) {
+      return `<section class="analytics-card"><h2>${escapeHtml(title)}</h2>${items.length ? items.map((item) => `<p>${escapeHtml(formatter(item))}</p>`).join("") : "<p>Chưa có dữ liệu.</p>"}</section>`;
+    }
+
+    async function approveReport(reportId) {
+      const report = state.reports.find((item) => item.id === reportId);
+      const textarea = document.querySelector(`[data-report-edit="${CSS.escape(reportId)}"]`);
+      const fieldSelect = document.querySelector(`[data-report-field="${CSS.escape(reportId)}"]`);
+      const newContent = textarea?.value.trim();
+      const targetField = fieldSelect?.value || "steps";
+
+      if (!report || !newContent) return showToast("Nội dung sửa không được để trống.", "warning");
+
+      if (state.demoMode) {
+        const feature = DEMO.features.find((item) => item.feature_id === report.feature_id);
+        if (feature) feature[targetField] = newContent;
+        const storedReport = DEMO.reports.find((item) => item.id === report.id);
+        if (storedReport) {
+          storedReport.status = "approved";
+          storedReport.resolved_at = new Date().toISOString();
+        }
+      } else {
+        await callEdgeFunction("admin-action", {
+          action: "approve_report",
+          admin_pin: state.adminPin,
+          report_id: report.id,
+          feature_id: report.feature_id,
+          target_field: targetField,
+          new_content: newContent
+        });
+      }
+
+      showToast("Đã cập nhật tính năng.", "success");
+      await loadFeatures();
+      await loadAdminData();
+      renderAdmin();
+    }
+
+    async function ignoreReport(reportId) {
+      if (state.demoMode) {
+        const storedReport = DEMO.reports.find((item) => item.id === reportId);
+        if (storedReport) storedReport.status = "rejected";
+      } else {
+        await callEdgeFunction("admin-action", { action: "ignore_report", admin_pin: state.adminPin, report_id: reportId });
+      }
+      await loadAdminData();
+      renderAdmin();
+    }
+
+    function openVideo(videoId) {
+      $("#videoFrame").innerHTML = `<iframe src="https://www.youtube.com/embed/${escapeHtml(videoId)}?autoplay=1" title="Video hướng dẫn" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+      $("#videoModal").classList.remove("hidden");
+    }
+
+    function closeVideo() {
+      $("#videoFrame").innerHTML = "";
+      $("#videoModal").classList.add("hidden");
+    }
+
+    function bindStaticEvents() {
+      $("#loginForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try {
+          setLoginError("");
+          const user = await login($("#employeeInput").value);
+          saveSession(user);
+          await loadFeatures();
+          subscribeRealtime();
+          $("#adminEntryButton").classList.remove("hidden");
+          showScreen("home");
+        } catch (error) {
+          setLoginError(error.message);
+        }
+      });
+
+      $("#logoutButton").addEventListener("click", () => {
+        clearSession();
+        state.selectedFeatureId = null;
+        showScreen("login");
+      });
+
+      $("#homeButton").addEventListener("click", () => showScreen("home"));
+      $("#backToHomeButton").addEventListener("click", () => showScreen("home"));
+      $("#adminBackButton").addEventListener("click", () => showScreen("home"));
+      $("#detailReportTopButton").addEventListener("click", openReportModal);
+      $("#closeVideoButton").addEventListener("click", closeVideo);
+      $("#videoModal").addEventListener("click", (event) => { if (event.target === $("#videoModal")) closeVideo(); });
+
+      $("#adminEntryButton").addEventListener("click", async () => {
+        if (await requireAdmin()) {
+          await loadAdminData();
+          showScreen("admin");
+        }
+      });
+
+      $("#searchInput").addEventListener("input", (event) => {
+        state.search = event.target.value;
+        clearTimeout(state.searchTimer);
+        state.searchTimer = setTimeout(async () => {
+          applyFilters();
+          renderHome();
+          await logSearch(state.filtered[0]?.feature_id || null);
+        }, CONFIG.SEARCH_DEBOUNCE_MS);
+      });
+
+      $("#clearSearchButton").addEventListener("click", () => {
+        state.search = "";
+        applyFilters();
+        renderHome();
+      });
+
+      document.addEventListener("click", async (event) => {
+        const chip = event.target.closest(".chip");
+        if (chip) {
+          if (chip.dataset.filterKind === "product") state.productCategory = chip.dataset.filterValue;
+          if (chip.dataset.filterKind === "category") state.category = chip.dataset.filterValue;
+          applyFilters();
+          renderHome();
+          return;
+        }
+
+        const card = event.target.closest(".feature-card");
+        if (card) {
+          state.selectedFeatureId = card.dataset.featureId;
+          await logSearch(state.selectedFeatureId);
+          showScreen("detail");
+          return;
+        }
+
+        const video = event.target.closest(".video-button");
+        if (video) openVideo(video.dataset.youtubeId);
+
+        const tab = event.target.closest(".tab-button");
+        if (tab) {
+          state.adminTab = tab.dataset.adminTab;
+          renderAdmin();
+        }
+
+        const approve = event.target.closest("[data-approve-report]");
+        if (approve) await approveReport(approve.dataset.approveReport);
+
+        const ignore = event.target.closest("[data-ignore-report]");
+        if (ignore) await ignoreReport(ignore.dataset.ignoreReport);
+      });
+
+      document.addEventListener("submit", async (event) => {
+        if (event.target.id === "reportForm") {
+          event.preventDefault();
+          try { await submitReport(event.target); } catch (error) { showToast(error.message, "error"); }
+        }
+      });
+    }
+
+    async function start() {
+      initClient();
+      bindStaticEvents();
+      if (!state.demoMode) $("#demoNotice").classList.add("hidden");
+      const session = getSession();
+      if (session) {
+        state.user = session;
+        await loadFeatures();
+        subscribeRealtime();
+        $("#adminEntryButton").classList.remove("hidden");
+        showScreen("home");
+      } else {
+        showScreen("login");
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>
